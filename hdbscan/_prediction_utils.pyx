@@ -5,7 +5,7 @@
 
 import numpy as np
 cimport numpy as np
-
+np.import_array() 
 from hdbscan.dist_metrics cimport DistanceMetric
 
 from libc.float cimport DBL_MAX
@@ -22,30 +22,39 @@ cpdef get_tree_row_with_child(np.ndarray tree, np.intp_t child):
 
     return tree[0]
 
-cdef np.float64_t min_dist_to_exemplar(
-                        np.ndarray[np.float64_t, ndim=1] point,
-                        np.ndarray[np.float64_t, ndim=2] cluster_exemplars,
-                        DistanceMetric dist_metric):
+cpdef double min_dist_to_exemplar(np.ndarray[np.float64_t, ndim=1] point,
+                                  np.ndarray[np.float64_t, ndim=2] cluster_exemplars,
+                                  DistanceMetric dist_metric):
+    """
+    Compute minimum distance from point to any exemplar using DistanceMetric.
+    """
+    cdef:
+        Py_ssize_t i, num_features, n_exemplars
+        double min_distance = DBL_MAX
+        double current_distance
 
-    cdef np.intp_t i
-    cdef np.float64_t result = DBL_MAX
-    cdef np.float64_t distance
-    cdef np.float64_t *point_ptr = (<np.float64_t *> point.data)
-    cdef np.float64_t[:, ::1] exemplars_view = \
-        (<np.float64_t [:cluster_exemplars.shape[0], :cluster_exemplars.shape[1]:1]>
-            (<np.float64_t *> cluster_exemplars.data))
-    cdef np.float64_t *exemplars_ptr = \
-        (<np.float64_t *> &exemplars_view[0, 0])
-    cdef np.intp_t num_features = point.shape[0]
+        double[::1] point_view
+        double[:, ::1] exemplars_view
 
-    for i in range(cluster_exemplars.shape[0]):
-        distance = dist_metric.dist(point_ptr,
-                                    &exemplars_ptr[num_features * i],
-                                    num_features)
-        if distance < result:
-            result = distance
+    # Validate dimensions
+    if point.ndim != 1 or cluster_exemplars.ndim != 2:
+        raise ValueError("Expected point to be 1D and exemplars to be 2D.")
+    if point.shape[0] != cluster_exemplars.shape[1]:
+        raise ValueError("Dimensionality mismatch between point and exemplars.")
 
-    return result
+    # Views
+    point_view = point
+    exemplars_view = cluster_exemplars
+
+    n_exemplars = cluster_exemplars.shape[0]
+    num_features = point.shape[0]
+
+    for i in range(n_exemplars):
+        current_distance = dist_metric.dist(&point_view[0], &exemplars_view[i, 0], num_features)
+        if current_distance < min_distance:
+            min_distance = current_distance
+
+    return min_distance
 
 cdef np.ndarray[np.float64_t, ndim=1] dist_vector(
                     np.ndarray[np.float64_t, ndim=1] point,
@@ -59,6 +68,8 @@ cdef np.ndarray[np.float64_t, ndim=1] dist_vector(
 
     for i in range(len(exemplars_list)):
         exemplars = exemplars_list[i]
+        point = np.ascontiguousarray(point, dtype=np.float64)
+        exemplars = np.ascontiguousarray(exemplars, dtype=np.float64)
         result[i] = min_dist_to_exemplar(point, exemplars, dist_metric)
 
     return result
@@ -241,7 +252,7 @@ cpdef np.ndarray[np.float64_t, ndim=1] per_cluster_scores(
 
 cpdef np.ndarray[np.float64_t, ndim=1] outlier_membership_vector(neighbor,
             lambda_, clusters, tree, max_lambda_dict, cluster_tree,
-            softmax=True):
+            softmax=False):
 
     cdef np.ndarray[np.float64_t, ndim=1] result
 
@@ -259,27 +270,76 @@ cpdef np.ndarray[np.float64_t, ndim=1] outlier_membership_vector(neighbor,
     result /= result.sum()
     return result
 
-cpdef np.float64_t prob_in_some_cluster(neighbor, lambda_, clusters, tree,
-            max_lambda_dict, cluster_tree):
+cpdef np.float64_t prob_in_some_cluster(
+        np.intp_t neighbor,
+        np.float64_t lambda_,
+        np.ndarray[np.intp_t, ndim=1] clusters,
+        np.ndarray tree,
+        dict max_lambda_dict,
+        np.ndarray cluster_tree):
+    """
+    Compute the probability of a single point being in some cluster, considering
+    the maximum height and resolving ties by selecting the cluster with the
+    largest max_lambda value.
 
+    Parameters:
+    ----------
+    neighbor : int
+        The index of the point (neighbor) in the tree.
+    lambda_ : float
+        The lambda value associated with the point.
+    clusters : np.ndarray[np.intp_t, ndim=1]
+        Array of cluster labels.
+    tree : np.ndarray
+        Hierarchical tree structure.
+    max_lambda_dict : dict
+        Dictionary mapping cluster labels to their maximum lambda values.
+    cluster_tree : np.ndarray
+        Cluster tree structure.
+
+    Returns:
+    -------
+    float
+        The probability of the point being in some cluster.
+    """
     cdef np.ndarray[np.float64_t, ndim=1] cluster_merge_heights
-
     cdef np.intp_t point_cluster
     cdef np.float64_t point_lambda
     cdef np.float64_t max_lambda
+    cdef np.float64_t point_height
+    cdef list candidate_indices
+    cdef int selected_idx
+    cdef int nearest_cluster
+    cdef int i
 
+    # Get the row in the tree corresponding to the neighbor
     point_row = get_tree_row_with_child(tree, neighbor)
     point_cluster = point_row['parent']
     point_lambda = lambda_
 
-    cluster_merge_heights = \
-        merge_height(point_cluster, point_lambda, clusters, cluster_tree)
+    # Compute merge heights
+    cluster_merge_heights = merge_height(point_cluster, point_lambda, clusters, cluster_tree)
     point_height = cluster_merge_heights.max()
-    nearest_cluster = clusters[cluster_merge_heights.argmax()]
 
-    max_lambda = max(lambda_, max_lambda_dict[nearest_cluster]) + 1e-8 # avoid z
+    # Find all indices where merge height == point_height
+    candidate_indices = []
+    for i in range(cluster_merge_heights.shape[0]):
+        if cluster_merge_heights[i] == point_height:
+            candidate_indices.append(i)
 
-    return (point_height / max_lambda)
+    # Among the candidates, pick the one with the maximum max_lambda_dict value
+    selected_idx = candidate_indices[0]
+    if len(candidate_indices) > 1:  # Only compare if there are multiple candidates
+        for i in candidate_indices[1:]:
+            if max_lambda_dict[clusters[i]] > max_lambda_dict[clusters[selected_idx]]:
+                selected_idx = i
+
+    # Get the nearest cluster and compute max_lambda
+    nearest_cluster = clusters[selected_idx]
+    max_lambda = max(lambda_, max_lambda_dict[nearest_cluster]) + 1e-8  # Avoid divide by zero
+
+    # Compute and return the probability
+    return point_height / max_lambda
 
 cpdef np.ndarray[np.float64_t, ndim=2] all_points_per_cluster_scores(
         np.ndarray[np.intp_t, ndim=1] clusters,
@@ -315,9 +375,15 @@ cpdef np.ndarray[np.float64_t, ndim=2] all_points_per_cluster_scores(
                                           clusters, cluster_tree)
 
         # Cythonize: result = np.exp(-(max_lambda / height))
-        for j in range(result_arr.shape[1]):
-            result[point][j] = exp(-(max_lambda / result[point][j]))
 
+        ################################ Changes for new hdbscan probabilities ##############################
+        # Cythonize: result = (max_lambda / (max_lambda - height))
+        for j in range(result_arr.shape[1]):
+            # result[point][j] = exp(-(max_lambda / result[point][j]))
+            result[point][j] = safe_always_positive_division(max_lambda,
+                                                             (max_lambda - result[point][j]))
+
+        ######################################################################################################
     return result_arr
 
 cpdef np.ndarray[np.float64_t, ndim=2] all_points_outlier_membership_vector(
@@ -325,7 +391,7 @@ cpdef np.ndarray[np.float64_t, ndim=2] all_points_outlier_membership_vector(
         np.ndarray tree,
         dict max_lambda_dict,
         np.ndarray cluster_tree,
-        np.intp_t softmax=True):
+        np.intp_t softmax=False):
 
     cdef np.ndarray[np.float64_t, ndim=2] per_cluster_scores
 
@@ -352,7 +418,28 @@ cpdef all_points_prob_in_some_cluster(
         np.ndarray tree,
         dict max_lambda_dict,
         np.ndarray cluster_tree):
+    """
+    Compute the probability of each point being in some cluster, considering
+    the maximum height and resolving ties by selecting the cluster with the
+    largest max_lambda value.
 
+    Parameters:
+    ----------
+    clusters : np.ndarray[np.intp_t, ndim=1]
+        Array of cluster labels.
+    tree : np.ndarray
+        Hierarchical tree structure.
+    max_lambda_dict : dict
+        Dictionary mapping cluster labels to their maximum lambda values.
+    cluster_tree : np.ndarray
+        Cluster tree structure.
+
+    Returns:
+    -------
+    np.ndarray[np.float64_t, ndim=1]
+        Array of probabilities for each point.
+    """
+    # Declare all variables at the top
     cdef np.ndarray[np.float64_t, ndim=1] heights
     cdef np.intp_t num_points = tree['parent'].min()
     cdef np.ndarray[np.float64_t, ndim=1] result
@@ -360,11 +447,16 @@ cpdef all_points_prob_in_some_cluster(
     cdef np.intp_t point_cluster
     cdef np.float64_t point_lambda
     cdef np.float64_t max_lambda
+    cdef np.float64_t point_height
+    cdef np.intp_t i, j
+    cdef list candidate_indices
+    cdef int selected_idx
+    cdef int nearest_cluster
 
-    cdef np.intp_t i
-
+    # Initialize result array
     result = np.empty(num_points, dtype=np.float64)
 
+    # Filter leaf nodes (points) from the tree
     point_tree = tree[tree['child_size'] == 1]
 
     for i in range(point_tree.shape[0]):
@@ -373,11 +465,29 @@ cpdef all_points_prob_in_some_cluster(
         point_cluster = point_row['parent']
         point_lambda = point_row['lambda_val']
 
-        # Can we not do a faster merge height operation here?
+        # Compute merge heights
         heights = merge_height(point_cluster, point_lambda,
                                clusters, cluster_tree)
-        max_lambda = max(max_lambda_dict[clusters[heights.argmax()]],
-                         point_lambda)
-        result[point] = (heights.max() / max_lambda)
+        point_height = heights.max()
+
+        # Find all indices where the height equals the maximum height
+        candidate_indices = []
+        for j in range(heights.shape[0]):
+            if heights[j] == point_height:
+                candidate_indices.append(j)
+
+        # Among the candidates, pick the one with the maximum max_lambda value
+        selected_idx = candidate_indices[0]
+        if len(candidate_indices) > 1:  # Only compare if there are multiple candidates
+            for j in candidate_indices[1:]:
+                if max_lambda_dict[clusters[j]] > max_lambda_dict[clusters[selected_idx]]:
+                    selected_idx = j
+
+        # Get the nearest cluster and compute max_lambda
+        nearest_cluster = clusters[selected_idx]
+        max_lambda = max(point_lambda, max_lambda_dict[nearest_cluster]) + 1e-8  # Avoid divide by zero
+
+        # Compute the probability for the point
+        result[point] = point_height / max_lambda
 
     return result
