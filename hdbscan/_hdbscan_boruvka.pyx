@@ -59,7 +59,7 @@
 
 import numpy as np
 cimport numpy as np
-
+np.import_array() 
 from libc.float cimport DBL_MAX
 from libc.math cimport fabs, pow
 
