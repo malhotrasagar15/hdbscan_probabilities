@@ -7,7 +7,7 @@
 
 import numpy as np
 cimport numpy as np
-
+np.import_array() 
 cdef np.double_t INFTY = np.inf
 
 
