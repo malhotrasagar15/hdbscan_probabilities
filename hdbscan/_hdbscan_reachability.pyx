@@ -7,7 +7,7 @@
 
 import numpy as np
 cimport numpy as np
-
+np.import_array() 
 from scipy.spatial.distance import pdist, squareform
 from scipy.sparse import lil_matrix as sparse_matrix
 from sklearn.neighbors import KDTree, BallTree
