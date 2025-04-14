@@ -604,7 +604,7 @@ def membership_vector(clusterer, points_to_predict):
             clusterer.prediction_data_.leaf_max_lambdas,
             clusterer.prediction_data_.cluster_tree)
 
-        result[i] = distance_vec ** 0.5 * outlier_vec ** 2.0
+        result[i] = distance_vec* outlier_vec
         result[i] /= result[i].sum()
 
         result[i] *= prob_in_some_cluster(
@@ -670,5 +670,62 @@ def all_points_membership_vectors(clusterer):
     row_sums = result.sum(axis=1)
     result = result / row_sums[:, np.newaxis]
     result *= in_cluster_probs[:, np.newaxis]
+
+    return result
+
+
+def all_points_outlier_vectors(clusterer):
+    
+    clusters = np.array(sorted(list(clusterer.condensed_tree_._select_clusters()))).astype(np.intp)
+    all_points = clusterer.prediction_data_.raw_data
+
+    # When no clusters found, return array of 0's
+    if clusters.size == 0:
+        return np.zeros(all_points.shape[0])
+    
+    outlier_vecs = all_points_outlier_membership_vector(
+        clusters,
+        clusterer.condensed_tree_._raw_tree,
+        clusterer.prediction_data_.leaf_max_lambdas,
+        clusterer.prediction_data_.cluster_tree)
+    
+    result = outlier_vecs
+
+    return result
+
+def all_points_distance_vectors(clusterer):
+    
+    clusters = np.array(sorted(list(clusterer.condensed_tree_._select_clusters()))).astype(np.intp)
+    all_points = clusterer.prediction_data_.raw_data
+
+    # When no clusters found, return array of 0's
+    if clusters.size == 0:
+        return np.zeros(all_points.shape[0])
+    
+    distance_vecs = all_points_dist_membership_vector(
+        all_points,
+        clusterer.prediction_data_.exemplars,
+        clusterer.prediction_data_.dist_metric)
+    
+    result = distance_vecs
+
+    return result
+
+def all_points_prob_in_some_cluster_vectors(clusterer):
+    
+    clusters = np.array(sorted(list(clusterer.condensed_tree_._select_clusters()))).astype(np.intp)
+    all_points = clusterer.prediction_data_.raw_data
+
+    # When no clusters found, return array of 0's
+    if clusters.size == 0:
+        return np.zeros(all_points.shape[0])
+    
+    in_cluster_probs = all_points_prob_in_some_cluster(
+        clusters,
+        clusterer.condensed_tree_._raw_tree,
+        clusterer.prediction_data_.leaf_max_lambdas,
+        clusterer.prediction_data_.cluster_tree)
+    
+    result = in_cluster_probs
 
     return result
