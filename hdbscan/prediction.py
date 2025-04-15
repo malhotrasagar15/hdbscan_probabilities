@@ -14,7 +14,8 @@ from ._prediction_utils import (get_tree_row_with_child,
                                 prob_in_some_cluster,
                                 all_points_dist_membership_vector,
                                 all_points_outlier_membership_vector,
-                                all_points_prob_in_some_cluster)
+                                all_points_prob_in_some_cluster,
+                                compute_merge_heights)
 from warnings import warn
 
 
@@ -96,7 +97,7 @@ class PredictionData(object):
                 [recurse_leaf_dfs(self.cluster_tree, child) for child in children], [])
 
     def __init__(self, data, condensed_tree, min_samples,
-                 tree_type='kdtree', metric='euclidean', **kwargs):
+                 tree_type='kdtree', metric='euclidean', min_cluster_size = 10, **kwargs):
         self.raw_data = data.astype(np.float64)
         self.tree = self._tree_type_map[tree_type](self.raw_data,
                                                    metric=metric, **kwargs)
@@ -117,10 +118,36 @@ class PredictionData(object):
 
         all_clusters = set(np.hstack([self.cluster_tree['parent'],
                                       self.cluster_tree['child']]))
+        
+        ########################### This code snippet is NOT the correct implementation of the Campello+2015 paper ##############################
+        # See the Issue https://github.com/scikit-learn-contrib/hdbscan/issues/628 for more details
+
+        # for cluster in all_clusters:
+        #     self.leaf_max_lambdas[cluster] = raw_condensed_tree['lambda_val'][
+        #         raw_condensed_tree['parent'] == cluster].max()
+
+        #########################################################################################################################################
+
+        ############################## Implementation of the Campello+2015 paper #######################################################
+        # Taking the lambda_value as the max_lambda until the parent cluster or any of its subclusters exist w.r.t min_cluster_size
 
         for cluster in all_clusters:
-            self.leaf_max_lambdas[cluster] = raw_condensed_tree['lambda_val'][
-                raw_condensed_tree['parent'] == cluster].max()
+            max_lambda_val = 0.0
+            for leaf in self._recurse_leaf_dfs(cluster):
+                temp_tree = raw_condensed_tree[raw_condensed_tree['parent'] == leaf]
+                if np.sum(temp_tree['child_size']) < min_cluster_size:
+                    continue
+                else:
+                    lambda_vals = temp_tree['lambda_val']
+                    # sort the lambda values in descending order
+                    sorted_lambda_vals = np.sort(lambda_vals)[::-1]
+                    # find the maximum lambda value where at least min_cluster_size points are present
+                    max_lambda_val = max(max_lambda_val, sorted_lambda_vals[min_cluster_size - 1])
+
+            self.leaf_max_lambdas[cluster] = max_lambda_val
+        #########################################################################################################################################
+                
+        ############ For future: Change the code for obtaining the max_lambdas as well ######################################
 
         for cluster in selected_clusters:
             self.max_lambdas[cluster] = \
@@ -727,5 +754,18 @@ def all_points_prob_in_some_cluster_vectors(clusterer):
         clusterer.prediction_data_.cluster_tree)
     
     result = in_cluster_probs
+
+    return result
+
+def all_points_merge_heights(clusterer):
+    
+    clusters = np.array(sorted(list(clusterer.condensed_tree_._select_clusters()))).astype(np.intp)
+
+    merge_heights_vals = compute_merge_heights(
+        clusters,
+        clusterer.condensed_tree_._raw_tree,
+        clusterer.prediction_data_.cluster_tree)
+    
+    result = merge_heights_vals
 
     return result
