@@ -1321,6 +1321,7 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
 
         if self.metric in FAST_METRICS:
             min_samples = self.min_samples or self.min_cluster_size
+            min_cluster_size = self.min_cluster_size
             if self.metric in KDTREE_VALID_METRICS:
                 tree_type = "kdtree"
             elif self.metric in BALLTREE_VALID_METRICS:
@@ -1335,6 +1336,7 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
                 min_samples,
                 tree_type=tree_type,
                 metric=self.metric,
+                min_cluster_size=min_cluster_size,
                 **self._metric_kwargs
             )
         else:
