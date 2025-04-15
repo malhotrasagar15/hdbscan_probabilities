@@ -380,8 +380,7 @@ cpdef np.ndarray[np.float64_t, ndim=2] all_points_per_cluster_scores(
         # Cythonize: result = (max_lambda / (max_lambda - height))
         for j in range(result_arr.shape[1]):
             # result[point][j] = exp(-(max_lambda / result[point][j]))
-            result[point][j] = safe_always_positive_division(max_lambda,
-                                                             (max_lambda - result[point][j]))
+            result[point][j] = max_lambda / (max_lambda - result[point][j])
 
         ######################################################################################################
     return result_arr
@@ -491,3 +490,45 @@ cpdef all_points_prob_in_some_cluster(
         result[point] = point_height / max_lambda
 
     return result
+
+
+cpdef np.ndarray[np.float64_t, ndim=2] compute_merge_heights(
+        np.ndarray[np.intp_t, ndim=1] clusters,
+        np.ndarray tree,
+        np.ndarray cluster_tree):
+    """
+    Compute the merge heights for each cluster.
+
+    Parameters:
+    ----------
+    clusters : np.ndarray[np.intp_t, ndim=1]
+        Array of cluster labels.
+    tree : np.ndarray
+        Hierarchical tree structure.
+    cluster_tree : np.ndarray
+        Cluster tree structure.
+
+    Returns:
+    -------
+    np.ndarray[np.float64_t, ndim=2]
+        Merge heights for each cluster.
+    """
+    cdef np.intp_t num_points = tree['parent'].min()
+    cdef np.ndarray[np.float64_t, ndim=2] merge_heights = np.empty((num_points, clusters.shape[0]), dtype=np.float64)
+    cdef np.intp_t i
+    cdef np.intp_t point
+    cdef np.intp_t point_cluster
+    cdef np.float64_t point_lambda
+
+    point_tree = tree[tree['child_size'] == 1]
+
+    for i in range(point_tree.shape[0]):
+        point_row = point_tree[i]
+        point = point_row['child']
+        point_cluster = point_row['parent']
+        point_lambda = point_row['lambda_val']
+
+        # Compute merge heights for the current point
+        merge_heights[point] = merge_height(point_cluster, point_lambda, clusters, cluster_tree)
+
+    return merge_heights
