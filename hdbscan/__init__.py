@@ -7,6 +7,7 @@ from .prediction import (approximate_predict,
                          all_points_outlier_vectors,
                          all_points_distance_vectors,
                          all_points_prob_in_some_cluster_vectors,
+                         all_points_merge_heights,
                          approximate_predict_scores)
 from .branches import (BranchDetector, 
                        detect_branches_in_clusters, 
