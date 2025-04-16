@@ -364,7 +364,7 @@ cpdef np.ndarray[np.float64_t, ndim=2] all_points_per_cluster_scores(
     point_tree = tree[tree['child_size'] == 1]
 
     for i in range(point_tree.shape[0]):
-        point_row = point_tree[i]
+        point_row = point_tree[point_tree['child'] == i][0]
         point = point_row['child']
         point_cluster = point_row['parent']
         point_lambda = point_row['lambda_val']
@@ -459,7 +459,7 @@ cpdef all_points_prob_in_some_cluster(
     point_tree = tree[tree['child_size'] == 1]
 
     for i in range(point_tree.shape[0]):
-        point_row = point_tree[i]
+        point_row = point_tree[point_tree['child'] == i][0]
         point = point_row['child']
         point_cluster = point_row['parent']
         point_lambda = point_row['lambda_val']
@@ -523,7 +523,7 @@ cpdef np.ndarray[np.float64_t, ndim=2] compute_merge_heights(
     point_tree = tree[tree['child_size'] == 1]
 
     for i in range(point_tree.shape[0]):
-        point_row = point_tree[i]
+        point_row = point_tree[point_tree['child'] == i][0]
         point = point_row['child']
         point_cluster = point_row['parent']
         point_lambda = point_row['lambda_val']
@@ -532,3 +532,51 @@ cpdef np.ndarray[np.float64_t, ndim=2] compute_merge_heights(
         merge_heights[point] = merge_height(point_cluster, point_lambda, clusters, cluster_tree)
 
     return merge_heights
+
+cpdef np.ndarray[np.float64_t, ndim=2] compute_max_lambdas_all_points(
+        np.ndarray[np.intp_t, ndim=1] clusters,
+        np.ndarray tree,
+        dict max_lambda_dict,
+        np.ndarray cluster_tree):
+    """
+    Compute the maximum lambda values for all points.
+
+    Parameters:
+    ----------
+    clusters : np.ndarray[np.intp_t, ndim=1]
+        Array of cluster labels.
+    tree : np.ndarray
+        Hierarchical tree structure.
+    max_lambda_dict : dict
+        Dictionary mapping cluster labels to their maximum lambda values.
+    cluster_tree : np.ndarray
+        Cluster tree structure.
+
+    Returns:
+    -------
+    np.ndarray[np.float64_t, ndim=2]
+        Array of maximum lambda values for all points and clusters.
+    """
+    cdef np.intp_t num_points = tree['parent'].min()
+    cdef np.ndarray[np.float64_t, ndim=2] result_arr = np.empty((num_points, clusters.shape[0]), dtype=np.float64)
+    cdef np.float64_t[:, ::1] result = result_arr  # Memoryview for faster access
+    cdef np.intp_t point
+    cdef np.intp_t point_cluster
+    cdef np.float64_t point_lambda
+    cdef np.float64_t max_lambda
+    cdef np.intp_t i
+
+    # Filter leaf nodes (points) from the tree
+    point_tree = tree[tree['child_size'] == 1]
+
+    for i in range(point_tree.shape[0]):
+        point_row = point_tree[point_tree['child'] == i][0]
+        point = point_row['child']
+        point_cluster = point_row['parent']
+        point_lambda = point_row['lambda_val']
+        max_lambda = max_lambda_dict[point_cluster] 
+
+        # Store max_lambda for the current point and all clusters
+        result[point, :] = max_lambda
+
+    return result_arr
