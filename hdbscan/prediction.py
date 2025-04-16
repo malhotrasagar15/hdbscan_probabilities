@@ -15,7 +15,8 @@ from ._prediction_utils import (get_tree_row_with_child,
                                 all_points_dist_membership_vector,
                                 all_points_outlier_membership_vector,
                                 all_points_prob_in_some_cluster,
-                                compute_merge_heights)
+                                compute_merge_heights,
+                                compute_max_lambdas_all_points)
 from warnings import warn
 
 
@@ -768,4 +769,21 @@ def all_points_merge_heights(clusterer):
     
     result = merge_heights_vals
 
+    return result
+
+
+def all_points_max_lambdas(clusterer):
+
+    clusters = np.array(sorted(list(clusterer.condensed_tree_._select_clusters()))).astype(np.intp)
+    all_points = clusterer.prediction_data_.raw_data
+
+    # When no clusters found, return array of 0's
+    if clusters.size == 0:
+        return np.zeros(all_points.shape[0])
+    
+    result = compute_max_lambdas_all_points(
+        clusters,
+        clusterer.condensed_tree_._raw_tree,
+        clusterer.prediction_data_.leaf_max_lambdas,
+        clusterer.prediction_data_.cluster_tree)
     return result
