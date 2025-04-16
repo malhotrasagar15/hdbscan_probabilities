@@ -8,6 +8,7 @@ from .prediction import (approximate_predict,
                          all_points_distance_vectors,
                          all_points_prob_in_some_cluster_vectors,
                          all_points_merge_heights,
+                         all_points_max_lambdas,
                          approximate_predict_scores)
 from .branches import (BranchDetector, 
                        detect_branches_in_clusters, 
