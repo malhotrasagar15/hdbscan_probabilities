@@ -1,6 +1,6 @@
 For the full README of the original package, please visit `hdbscan <https://github.com/scikit-learn-contrib/hdbscan>`_
 
-This forked repository deals with the soft clustering method described in `How Soft Clustering for HDBSCAN Works <https://hdbscan.readthedocs.io/en/latest/soft_clustering_explanation.html>`_ with a couple of bugs fixed and trying to address the issue '<https://github.com/scikit-learn-contrib/hdbscan/issues/628>`.
+This forked repository deals with the soft clustering method described in `How Soft Clustering for HDBSCAN Works <https://hdbscan.readthedocs.io/en/latest/soft_clustering_explanation.html>`_ with a couple of bugs fixed and trying to address the issue `#628 <https://github.com/scikit-learn-contrib/hdbscan/issues/628>`_.
 
 ------------------------
 Additional/Updated functions in this package
